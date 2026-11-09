@@ -3,19 +3,19 @@ import re
 import datetime
 import requests
 
-# 1. Configuration & URLs
+# Direct Rosatom Search API Endpoint
 TARGET_API_URL = "https://zakupki.rosatom.ru/WebServices/PublicService.svc/GetProcurements"
 WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwlcr0D8GE-RuljYCJhTRRQqkHq0u8xQ_J7BfQtiGkz4ymBL48-2hxVnVZq_ELSY7vYDw/exec"
 
-# Keywords in English and Russian for Rooppur & Bangladesh
+# Keywords (English & Russian)
 KEYWORDS = [
-    r"bangladesh", r"rooppur", r"ruppur",  # English keywords
-    r"бангладеш", r"руппур"                 # Russian keywords (Бангладеш, Руппур)
+    r"bangladesh", r"rooppur", r"ruppur",
+    r"бангладеш", r"руппур"
 ]
 KEYWORD_PATTERN = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
 def scrape_and_send():
-    print("Starting Rosatom Dynamic API Scraper with multi-language support...")
+    print("Starting Rosatom Official API Scraper...")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -23,29 +23,28 @@ def scrape_and_send():
         "Accept": "application/json, text/javascript, */*; q=0.01"
     }
 
-    # Calculate Current Month Date Range
+    # Date Range: From 1st day of current month to today
     now = datetime.datetime.now()
     first_day_of_month = now.replace(day=1).strftime("%d.%m.%Y")
     today_date = now.strftime("%d.%m.%Y")
     
-    print(f"Scanning current month tenders from {first_day_of_month} to {today_date} (PageSize: 100)...")
+    print(f"Fetching tenders from {first_day_of_month} to {today_date}...")
 
-    # Payload matching Rosatom API with increased count (100 items per request)
     payload = {
         "params": {
             "PublicationDateFrom": first_day_of_month,
             "PublicationDateTo": today_date,
-            "PageSize": 100,
+            "PageSize": 200,
             "PageIndex": 0
         }
     }
     
     try:
         response = requests.post(TARGET_API_URL, json=payload, headers=headers, timeout=30)
-        print(f"Rosatom API Response Code: {response.status_code}")
+        print(f"API Response Status: {response.status_code}")
         
         if response.status_code != 200:
-            print("Failed to connect to Rosatom API service.")
+            print("Failed to fetch from Rosatom API.")
             return
 
         res_data = response.json()
@@ -54,7 +53,7 @@ def scrape_and_send():
         if not items and isinstance(res_data, list):
             items = res_data
 
-        print(f"Total fetched items for this month: {len(items)}")
+        print(f"Total tenders retrieved from API: {len(items)}")
         
         extracted_tenders = []
 
@@ -66,7 +65,7 @@ def scrape_and_send():
             authority = str(item.get("CustomerName", "") or item.get("authority", "Rosatom"))
             deadline = str(item.get("SubmissionEndDate", "") or item.get("deadline", ""))
 
-            # Match both English and Russian keywords in Subject
+            # Keyword matching check
             if KEYWORD_PATTERN.search(subject):
                 extracted_tenders.append({
                     "procNo": proc_no,
@@ -77,18 +76,17 @@ def scrape_and_send():
                     "deadline": deadline
                 })
 
-        print(f"Found {len(extracted_tenders)} matching tenders after keyword filtering.")
+        print(f"Matching tenders found after keyword filter: {len(extracted_tenders)}")
 
-        # Send matched tenders to Google Sheets Web App
         if extracted_tenders:
-            print("Sending data to Google Sheets Web App...")
+            print("Sending matching tenders to Google Sheets Web App...")
             res = requests.post(WEB_APP_URL, json=extracted_tenders, timeout=30)
-            print("Response from Google Web App:", res.text)
+            print("Google Web App Response:", res.text)
         else:
-            print("No matching tenders found for current month.")
+            print("No matching tenders found for the current month period.")
 
     except Exception as e:
-        print(f"Error while running scraper: {str(e)}")
+        print(f"Error during API execution: {str(e)}")
 
 if __name__ == "__main__":
     scrape_and_send()
