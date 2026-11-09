@@ -3,19 +3,19 @@ import re
 import datetime
 import requests
 
-# 1. Configuration & Keywords
+# 1. Configuration & URLs
 TARGET_API_URL = "https://zakupki.rosatom.ru/WebServices/PublicService.svc/GetProcurements"
-WEB_APP_URL = os.environ.get("GOOGLE_WEB_APP_URL")
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwlcr0D8GE-RuljYCJhTRRQqkHq0u8xQ_J7BfQtiGkz4ymBL48-2hxVnVZq_ELSY7vYDw/exec"
 
-KEYWORDS = [r"bangladesh", r"rooppur", r"ruppur"]
+# Keywords in English and Russian for Rooppur & Bangladesh
+KEYWORDS = [
+    r"bangladesh", r"rooppur", r"ruppur",  # English keywords
+    r"бангладеш", r"руппур"                 # Russian keywords (Бангладеш, Руппур)
+]
 KEYWORD_PATTERN = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
 def scrape_and_send():
-    print("Starting Rosatom Dynamic API Scraper...")
-    
-    if not WEB_APP_URL:
-        print("ERROR: GOOGLE_WEB_APP_URL secret is missing in GitHub Actions!")
-        return
+    print("Starting Rosatom Dynamic API Scraper with multi-language support...")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -28,14 +28,14 @@ def scrape_and_send():
     first_day_of_month = now.replace(day=1).strftime("%d.%m.%Y")
     today_date = now.strftime("%d.%m.%Y")
     
-    print(f"Scanning tenders published between {first_day_of_month} and {today_date}...")
+    print(f"Scanning current month tenders from {first_day_of_month} to {today_date} (PageSize: 100)...")
 
-    # Payload matching Rosatom Procurement API Search Filters
+    # Payload matching Rosatom API with increased count (100 items per request)
     payload = {
         "params": {
             "PublicationDateFrom": first_day_of_month,
             "PublicationDateTo": today_date,
-            "PageSize": 200,
+            "PageSize": 100,
             "PageIndex": 0
         }
     }
@@ -54,7 +54,7 @@ def scrape_and_send():
         if not items and isinstance(res_data, list):
             items = res_data
 
-        print(f"Total tenders fetched from portal for current month: {len(items)}")
+        print(f"Total fetched items for this month: {len(items)}")
         
         extracted_tenders = []
 
@@ -66,7 +66,7 @@ def scrape_and_send():
             authority = str(item.get("CustomerName", "") or item.get("authority", "Rosatom"))
             deadline = str(item.get("SubmissionEndDate", "") or item.get("deadline", ""))
 
-            # Keyword Match in Subject of Contract
+            # Match both English and Russian keywords in Subject
             if KEYWORD_PATTERN.search(subject):
                 extracted_tenders.append({
                     "procNo": proc_no,
@@ -77,7 +77,7 @@ def scrape_and_send():
                     "deadline": deadline
                 })
 
-        print(f"Found {len(extracted_tenders)} matching tenders with keywords for this month.")
+        print(f"Found {len(extracted_tenders)} matching tenders after keyword filtering.")
 
         # Send matched tenders to Google Sheets Web App
         if extracted_tenders:
