@@ -1,79 +1,94 @@
 import os
 import re
-import json
+import datetime
 import requests
-from bs4 import BeautifulSoup
 
-# 1. Configuration
-TARGET_URL = "https://zakupki.rosatom.ru/?link=procurements"
+# 1. Configuration & Keywords
+TARGET_API_URL = "https://zakupki.rosatom.ru/WebServices/PublicService.svc/GetProcurements"
 WEB_APP_URL = os.environ.get("GOOGLE_WEB_APP_URL")
 
-KEYWORDS = [r"\bangladesh\b", r"\brooppur\b", r"\bruppur\b"]
+KEYWORDS = [r"bangladesh", r"rooppur", r"ruppur"]
 KEYWORD_PATTERN = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
 def scrape_and_send():
-    print("Starting Rosatom Tender Scraper...")
+    print("Starting Rosatom Dynamic API Scraper...")
     
     if not WEB_APP_URL:
         print("ERROR: GOOGLE_WEB_APP_URL secret is missing in GitHub Actions!")
         return
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Content-Type": "application/json; charset=UTF-8",
+        "Accept": "application/json, text/javascript, */*; q=0.01"
+    }
+
+    # Calculate Current Month Date Range
+    now = datetime.datetime.now()
+    first_day_of_month = now.replace(day=1).strftime("%d.%m.%Y")
+    today_date = now.strftime("%d.%m.%Y")
+    
+    print(f"Scanning tenders published between {first_day_of_month} and {today_date}...")
+
+    # Payload matching Rosatom Procurement API Search Filters
+    payload = {
+        "params": {
+            "PublicationDateFrom": first_day_of_month,
+            "PublicationDateTo": today_date,
+            "PageSize": 200,
+            "PageIndex": 0
+        }
     }
     
     try:
-        response = requests.get(TARGET_URL, headers=headers, timeout=30)
-        print(f"Portal Response Status: {response.status_code}")
+        response = requests.post(TARGET_API_URL, json=payload, headers=headers, timeout=30)
+        print(f"Rosatom API Response Code: {response.status_code}")
         
         if response.status_code != 200:
-            print(f"Failed to fetch portal. Status: {response.status_code}")
+            print("Failed to connect to Rosatom API service.")
             return
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        rows = soup.find_all("tr")
-        print(f"Total rows found on page: {len(rows)}")
+        res_data = response.json()
+        items = res_data.get("d", {}).get("Items", []) if isinstance(res_data.get("d"), dict) else res_data.get("Items", [])
+        
+        if not items and isinstance(res_data, list):
+            items = res_data
+
+        print(f"Total tenders fetched from portal for current month: {len(items)}")
         
         extracted_tenders = []
 
-        for row in rows:
-            try:
-                cols = row.find_all("td")
-                if len(cols) < 6:
-                    continue
-                
-                deadline = cols[0].get_text(strip=True)
-                pub_date = cols[1].get_text(strip=True)
-                price = cols[2].get_text(strip=True)
-                proc_no = cols[3].get_text(strip=True)
-                authority = cols[4].get_text(strip=True)
-                subject = cols[5].get_text(strip=True)
+        for item in items:
+            subject = str(item.get("Subject", "") or item.get("subject", ""))
+            proc_no = str(item.get("ProcurementNumber", "") or item.get("id", ""))
+            pub_date = str(item.get("PublicationDate", "") or item.get("pubDate", ""))
+            price = str(item.get("Price", "") or item.get("price", "0.00"))
+            authority = str(item.get("CustomerName", "") or item.get("authority", "Rosatom"))
+            deadline = str(item.get("SubmissionEndDate", "") or item.get("deadline", ""))
 
-                # Check keyword match in Subject of Contract
-                if KEYWORD_PATTERN.search(subject):
-                    extracted_tenders.append({
-                        "procNo": proc_no,
-                        "pubDate": pub_date,
-                        "price": price,
-                        "authority": authority,
-                        "subject": subject,
-                        "deadline": deadline
-                    })
-            except Exception as ex:
-                continue
+            # Keyword Match in Subject of Contract
+            if KEYWORD_PATTERN.search(subject):
+                extracted_tenders.append({
+                    "procNo": proc_no,
+                    "pubDate": pub_date,
+                    "price": price,
+                    "authority": authority,
+                    "subject": subject,
+                    "deadline": deadline
+                })
 
-        print(f"Found {len(extracted_tenders)} matching tenders matching keywords.")
+        print(f"Found {len(extracted_tenders)} matching tenders with keywords for this month.")
 
-        # Send to Google Apps Script Web App
+        # Send matched tenders to Google Sheets Web App
         if extracted_tenders:
             print("Sending data to Google Sheets Web App...")
             res = requests.post(WEB_APP_URL, json=extracted_tenders, timeout=30)
             print("Response from Google Web App:", res.text)
         else:
-            print("No matching tenders found at this moment to sync.")
+            print("No matching tenders found for current month.")
 
     except Exception as e:
-        print(f"An error occurred during scraping: {str(e)}")
+        print(f"Error while running scraper: {str(e)}")
 
 if __name__ == "__main__":
     scrape_and_send()
