@@ -3,19 +3,19 @@ import re
 import datetime
 import requests
 
-# Direct Rosatom Search API Endpoint
+# 1. Configuration & URLs
 TARGET_API_URL = "https://zakupki.rosatom.ru/WebServices/PublicService.svc/GetProcurements"
-WEB_APP_URL = "https://script.google.com/macros/s/AKfycbwlcr0D8GE-RuljYCJhTRRQqkHq0u8xQ_J7BfQtiGkz4ymBL48-2hxVnVZq_ELSY7vYDw/exec"
+WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyQ2hf3Xd3vl7WC0mbwMWuBhpwxpChUVU1GofAaZafwQFiwL7ZiHz-8qfk8h0KIr9-Rcg/exec"
 
-# Keywords (English & Russian)
+# Keywords in English and Russian for Rooppur & Bangladesh
 KEYWORDS = [
-    r"bangladesh", r"rooppur", r"ruppur",
-    r"бангладеш", r"руппур"
+    r"bangladesh", r"rooppur", r"ruppur",  # English keywords
+    r"бангладеш", r"руппур"                 # Russian keywords (Бангладеш, Руппур)
 ]
 KEYWORD_PATTERN = re.compile("|".join(KEYWORDS), re.IGNORECASE)
 
 def scrape_and_send():
-    print("Starting Rosatom Official API Scraper...")
+    print("Starting Rosatom Official API Scraper with new Web App URL...")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -28,13 +28,13 @@ def scrape_and_send():
     first_day_of_month = now.replace(day=1).strftime("%d.%m.%Y")
     today_date = now.strftime("%d.%m.%Y")
     
-    print(f"Fetching tenders from {first_day_of_month} to {today_date}...")
+    print(f"Fetching tenders from {first_day_of_month} to {today_date} (PageSize: 100)...")
 
     payload = {
         "params": {
             "PublicationDateFrom": first_day_of_month,
             "PublicationDateTo": today_date,
-            "PageSize": 200,
+            "PageSize": 100,
             "PageIndex": 0
         }
     }
@@ -65,7 +65,7 @@ def scrape_and_send():
             authority = str(item.get("CustomerName", "") or item.get("authority", "Rosatom"))
             deadline = str(item.get("SubmissionEndDate", "") or item.get("deadline", ""))
 
-            # Keyword matching check
+            # Keyword matching check (English & Russian)
             if KEYWORD_PATTERN.search(subject):
                 extracted_tenders.append({
                     "procNo": proc_no,
